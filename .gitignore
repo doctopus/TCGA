@@ -8,6 +8,7 @@
 *.log
 # Figures 
 *.png
+*.pdf
 # Ignore all files in io directory
 **/input/*
 **/output/*

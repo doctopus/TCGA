@@ -15,8 +15,9 @@ library(reshape2)
 
 # List of mouse genes
 mouse_genes <- c("Sox2", "Adam11", "Dkk4", "Wnt5b", "Wnt11", "Snai2", "Ngf", "Rspo3", "Adamts5",
-                 "Wnt3", "Wnt6", "Fzd10", "Wnt9b", "Sox17")
-
+                 "Wnt3", "Wnt6", "Fzd10", "Wnt9b", "Sox17",
+                 "Adrb1", "Adrb2", "Adra1a", "Adra1b", "Adra1d", "Adra2a", "Adra2b", "Adra2c")
+genes_of_interest <- toupper(mouse_genes)
 # Set up Ensembl connections
 ensembl_mouse <- useMart("ensembl", dataset = "mmusculus_gene_ensembl", host = "https://dec2021.archive.ensembl.org/") #Newer version will cause errors in getLDS step
 ensembl_human <- useMart("ensembl", dataset = "hsapiens_gene_ensembl", host = "https://dec2021.archive.ensembl.org/") #Newer version will cause errors in getLDS step
@@ -51,16 +52,33 @@ list.files("/Users/i/Dropbox/Clinic3.0/Developer/RStudio/TCGA/TCGA-BreastCa/GDCd
 
 #Define Target directory for TCGAbiolinks to download data
 tcga_download_directory <- "/Users/i/Dropbox/Clinic3.0/Developer/RStudio/TCGA/TCGA-BreastCa/GDCdata"
+# tcga_download_directory <- "/Users/i/Documents/Clinic3.0/TCGA/TCGA-BreastCa/GDCdata"
 
-# Download TCGA BRCA data
-query <- GDCquery(project = "TCGA-BRCA",
+# Download TCGA BRCA gene expression data
+query <- GDCquery(project = "TCGA-BRCA", 
                   data.category = "Transcriptome Profiling",
                   data.type = "Gene Expression Quantification",
                   workflow.type = "STAR - Counts")
 
 GDCdownload(query, directory = tcga_download_directory)
 
-data <- GDCprepare(query)
+exp_data <- GDCprepare(query)
+
+exp_data@rowRanges
+colnames(exp_data)
+# Filter genes_data to only include rows with non-missing Ensembl IDs
+genes_data <- exp_data[!is.na(exp_data$Gene_stable_ID.1), ]
+
+# Define the list of genes
+
+# Subset the gene expression data for the genes of interest
+genes_data <- exp_data[, c("HGNC_symbol", "Gene_stable_ID.1", genes_of_interest)]
+
+# Load the human_orthologs dataframe
+# Merge genes_data with human_orthologs to get the expression data for genes of interest
+merged_data <- merge(genes_data, human_orthologs, 
+                     by.x = c("HGNC_symbol", "Gene_stable_ID.1"), 
+                     by.y = c("gene_name", "ensembl_id"), all.x = TRUE)
 
 # Filter for TNBC samples (you may need to adjust this based on the specific clinical data available)
 clinical <- colData(data)
@@ -99,7 +117,7 @@ save(expr_data, survival_data, gene_mapping, file = "tcga_analysis_data.RData")
 print("Analysis complete. Data saved in tcga_analysis_data.RData")
 
 #### Optional ----
-genes_of_interest = c("ADAMTS5", "WNT3", "WNT9B", "WNT11")
+genes_of_interest = c("ENSG00000154736", "ENSG00000108379", "ENSG00000146374", "ENSG00000158955")
 # Perform survival analysis for each gene
 for (gene in genes_of_interest) {
   fit <- survfit(Surv(time, status) ~ ifelse(expr_data[gene, ] > median(expr_data[gene, ]), "High", "Low"), data = survival_data)
