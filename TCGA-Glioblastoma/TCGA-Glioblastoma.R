@@ -52,7 +52,7 @@ print(gene_mapping)
 system("ln -s /Users/i/Documents/Clinic3.0/TCGA/TCGA-Glioblastoma/GDCdata /Users/i/Dropbox/Clinic3.0/Developer/RStudio/TCGA/TCGA-Glioblastoma/GDCdata")
 #Test if it works by adding a file to the folderr where the data will go through the symlink
 list.files("/Users/i/Dropbox/Clinic3.0/Developer/RStudio/TCGA/TCGA-Glioblastoma/GDCdata")
- 
+
 #Define Target directory for TCGAbiolinks to download data
 tcga_download_directory <- "/Users/i/Dropbox/Clinic3.0/Developer/RStudio/TCGA/TCGA-Glioblastoma/GDCdata"
 # tcga_download_directory <- "/Users/i/Documents/Clinic3.0/TCGA/TCGA-BreastCa/GDCdata"
@@ -71,7 +71,8 @@ clinical_data <- GDCquery_clinic(project = "TCGA-GBM",
                                  save.csv = FALSE)
 
 # Filter columns for survival plot
-survival_data <- clinical_data[, c("bcr_patient_barcode", "submitter_id", "primary_diagnosis", "gender", "vital_status", "days_to_death", "days_to_last_follow_up")]
+survival_data <- clinical_data[, c("bcr_patient_barcode", "submitter_id", "primary_diagnosis", "gender", "vital_status", "days_to_death", "days_to_last_follow_up",
+                                   "treatments_radiation_treatment_type", "treatments_radiation_treatment_or_therapy")]
 
 # survival_data <- survival_data
 # Create a new column for survival time
