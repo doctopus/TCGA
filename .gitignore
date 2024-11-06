@@ -6,6 +6,7 @@
 .Ruserdata
 # Log Files
 *.log
+*.txt
 # Figures 
 *.png
 *.pdf

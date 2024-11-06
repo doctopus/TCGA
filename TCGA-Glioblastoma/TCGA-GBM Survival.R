@@ -1,13 +1,15 @@
 # Install and load required packages
-if (!requireNamespace("BiocManager", quietly = TRUE))
-  install.packages("BiocManager")
-BiocManager::install(c("TCGAbiolinks", "SummarizedExperiment", "dplyr", "survival"))
+# if (!requireNamespace("BiocManager", quietly = TRUE))
+#   install.packages("BiocManager")
+# BiocManager::install(c("TCGAbiolinks", "SummarizedExperiment", "dplyr", "survival"))
 
 library(TCGAbiolinks)
 library(SummarizedExperiment)
 library(dplyr)
 library(survival)
 library(survminer)
+library(mclust)
+
 
 #Symlink GDCdata folder to store data downloaded from TCGAbiolinks outside the 
 # first link is where data is, second link is where symlink is going to be
@@ -18,19 +20,20 @@ list.files("/Users/i/Dropbox/Clinic3.0/Developer/RStudio/TCGA/TCGA-Glioblastoma/
 #Define Target directory for TCGAbiolinks to download data
 tcga_gbm_download_directory <- "/Users/i/Dropbox/Clinic3.0/Developer/RStudio/TCGA/TCGA-Glioblastoma/GDCdata"
 
-
+#Get TCGA Project Summary
+TCGAbiolinks:::getProjectSummary('TCGA-GBM')
 
 # Query and download clinical data
-query <- GDCquery(
+query_clinical <- GDCquery(
   project = "TCGA-GBM",
   data.category = "Clinical",
   data.type = "Clinical Supplement",
   data.format = "BCR Biotab"
 )
 
-GDCdownload(query, directory = tcga_gbm_download_directory)
+GDCdownload(query_clinical, directory = tcga_gbm_download_directory)
 
-clinical_gbm <- GDCprepare(query)
+clinical_gbm <- GDCprepare(query_clinical)
 
 # Extract relevant clinical information
 clinical_gbm_data <- clinical_gbm$clinical_patient_gbm %>%
@@ -71,3 +74,58 @@ ggsurvplot(fit, data = clinical_gbm_data, title="TCGA-GBM Survival of Male & Fem
 
 ggsurvplot(fit, data = clinical_gbm_data, title="TCGA-GBM Survival of Male & Female",           
            facet.by = c("prognosis"))
+
+
+###-----------------Gaussian Mixure Modelling via mclust packaghe, to identify a threshold for IDH1 mutant
+#IDH1 mutation should typically determined by DNA sequencing or immunohistochemistry. Inferring from gene expression levels is a simplification.
+# Gaussian mixture model assumes a bimodal distribution of IDH1 expression, which may not always be the case. Need to visually inspect the resulting plot to ensure this assumption holds.
+# This approach may not be as accurate as direct genetic testing for IDH1 mutations. It is a proxy method and need to be validated against known mutation data if possible.
+# The Ensembl ID for IDH1 (ENSG00000138413) is used to extract its expression data.
+# Query and download gene expression data
+query_expression <- GDCquery(
+  project = "TCGA-GBM", 
+  data.category = "Transcriptome Profiling", 
+  data.type = "Gene Expression Quantification", 
+  workflow.type = "STAR - Counts"
+)
+GDCdownload(query_expression)
+expression <- GDCprepare(query_expression)
+
+# Extract IDH1 expression data
+idh1_expression <- assay(expression)["ENSG00000138413",]  # IDH1 Ensembl ID
+idh1_data <- data.frame(
+  bcr_patient_barcode = colData(expression)$barcode,
+  idh1_expression = idh1_expression
+)
+
+# Fit Gaussian mixture model
+gmm_fit <- Mclust(idh1_data$idh1_expression, G=2)
+
+# Determine threshold
+threshold <- mean(gmm_fit$parameters$mean)
+
+# Classify samples
+idh1_data$idh1_status <- ifelse(idh1_data$idh1_expression > threshold, "Mutant", "Wild-type")
+
+# Merge clinical and IDH1 status data
+clinical_data <- merge(clinical_data, idh1_data, by="bcr_patient_barcode")
+
+# Summarize clinical data
+summary_age <- summary(clinical_data$age_at_initial_pathologic_diagnosis)
+summary_stage <- table(clinical_data$tumor_stage)
+summary_idh1 <- table(clinical_data$idh1_status)
+
+print(summary_age)
+print(summary_stage)
+print(summary_idh1)
+
+# Display the first few rows of the processed clinical data
+head(clinical_data)
+
+# Plot IDH1 expression distribution
+library(ggplot2)
+ggplot(clinical_data, aes(x=idh1_expression, fill=idh1_status)) +
+  geom_density(alpha=0.5) +
+  geom_vline(xintercept=threshold, linetype="dashed") +
+  labs(title="Distribution of IDH1 Expression", x="IDH1 Expression", y="Density") +
+  theme_minimal()
