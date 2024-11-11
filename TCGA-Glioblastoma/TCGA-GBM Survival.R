@@ -23,6 +23,7 @@ tcga_gbm_download_directory <- "/Users/i/Dropbox/Clinic3.0/Developer/RStudio/TCG
 #Get TCGA Project Summary
 TCGAbiolinks:::getProjectSummary('TCGA-GBM')
 
+#-------------↓
 # Query and download clinical data
 query_clinical <- GDCquery(
   project = "TCGA-GBM",
@@ -30,11 +31,95 @@ query_clinical <- GDCquery(
   data.type = "Clinical Supplement",
   data.format = "BCR Biotab"
 )
-
 GDCdownload(query_clinical, directory = tcga_gbm_download_directory)
-
 clinical_gbm <- GDCprepare(query_clinical)
 
+
+
+#-------------↑
+
+#-------------↓
+# Query and download Transcriptome Data
+query_transcriptome <- GDCquery(
+  project = "TCGA-GBM",
+  data.category = "Transcriptome Profiling",
+  data.type = "Gene Expression Quantification",
+  workflow.type = "STAR - Counts"
+)
+
+GDCdownload(query_transcriptome, directory = tcga_gbm_download_directory)
+transcriptome_gbm <- GDCprepare(query_transcriptome)
+#Subset the SummarizedExperiment object to keep only IDH WT
+# Subset the SummarizedExperiment object
+transcriptome_gbm_subset <- transcriptome_gbm[, colData(transcriptome_gbm)$paper_IDH.status == "WT" & !is.na(colData(transcriptome_gbm)$paper_IDH.status)]
+# Extract the barcodes from transcriptome_gbm_subset
+
+patients_to_keep <- colData(transcriptome_gbm_subset)$patient
+# Subset clinical_data to keep only rows with matching barcodes
+clinical_data_subset <- survival_data[survival_data$bcr_patient_barcode %in% patients_to_keep, ]
+
+#Plot Start - Survival Plot ----
+survival_data <- clinical_data_subset
+# Create a new column for survival time
+# survival_data$survival_time <- ifelse(survival_data$vital_status == "Dead", survival_data$days_to_death, survival_data$days_to_last_follow_up)
+
+# Create a new column for censoring status
+# survival_data$censor <- ifelse(survival_data$vital_status == "Alive", 0, 1)
+
+# Convert survival time and censor to numeric
+# survival_data$survival_time <- as.numeric(survival_data$survival_time)
+# survival_data$censor <- as.numeric(survival_data$censor)
+
+# Create a new column for gender
+# survival_data$gender <- substr(survival_data$bcr_patient_barcode, 14, 14)
+
+# Plot Kaplan-Meier curve comparing survival between male and female patients
+# fit <- survfit(Surv(survival_time, censor) ~ gender, data = survival_data)
+# ggsurvplot(fit, data = survival_data, pval = TRUE)
+
+survival_data <- clinical_data_subset %>%
+  mutate(
+    survival_time = as.numeric(ifelse(vital_status == "Alive", days_to_last_follow_up, days_to_death)),
+    survival_time = survival_time / 30.417,  # Divide by 365.25 to Convert days to years OR divide by 30.417 to convet to Month
+    prognosis = ifelse(survival_time > 18, "Good", "Poor")
+  )
+survival_data <- survival_data %>% 
+  mutate_at(c('age_at_initial_pathologic_diagnosis', 'death_days_to', 'last_contact_days_to'), as.numeric) %>% 
+  mutate_at('prognosis', as.factor)
+
+# Create a new column for censoring status
+survival_data$censor <- ifelse(survival_data$vital_status == "Alive", 0, 1)
+
+fit <- survfit(Surv(survival_time, censor) ~ gender, data = survival_data)
+ggsurvplot(fit, data = survival_data, title="TCGA-GBM Survival of Male & Female",
+           legend =c(0.8, 0.8), palette = c("#FC6BF4", "#007DEF"), legend.title="Sex",
+           risk.table =TRUE, risk.table.col="gender",
+           legend.labs=c("Female", "Male"),
+           ggtheme=theme_survminer() + theme(plot.title=element_text(hjust = 0.5, face = "plain" )),
+           xlab="Time in Months", size=1,
+           break.x.by=12,
+           pval = FALSE, conf.int = FALSE,
+           surv.median.line = "v",
+           surv.scale="percent",
+           axes.offset=TRUE)
+
+ggsurvplot(fit, data = survival_data, title="TCGA-GBM Survival of Male & Female",           
+           facet.by = c("prognosis"))
+#Plot End -Survival Plot ----
+#-------------↑
+
+#-------------↓
+# Query and download biospecimen data
+query_biospecimen <- GDCquery(
+  project = "TCGA-GBM",
+  data.category = "Biospecimen",
+  data.type = "Biospecimen Supplement",
+  data.format = "BCR Biotab"
+)
+GDCdownload(query_biospecimen, directory = tcga_gbm_download_directory)
+biospecimen_gbm <- GDCprepare(query_biospecimen)
+
+#-------------↑
 # Extract relevant clinical information
 clinical_gbm_data <- clinical_gbm$clinical_patient_gbm %>%
   slice(3:n()) %>%
